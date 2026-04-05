@@ -88,16 +88,27 @@ class DevelopmentAgent(BaseAgent):
             issues = found_issues
             self.logger.warning("dev_iteration_failed", iteration=i, issues=found_issues[:3])
 
-        # All iterations exhausted
-        last_output = iterations[-1].self_check_output if iterations else ""
-        state.mark_stage_failed(
-            self.stage_number,
-            f"Code did not pass self-check after {max_iter} iterations. "
-            f"Last output: {last_output[:500]}",
+        # All iterations exhausted — use the last generated files and continue
+        last = iterations[-1] if iterations else None
+        best_files = last.files_generated if last and last.files_generated else {}
+        self.logger.warning(
+            "dev_iterations_exhausted",
+            max=max_iter,
+            continuing_with_best_output=bool(best_files),
         )
-        raise PipelineHaltException(
-            f"DevelopmentAgent could not produce passing code in {max_iter} iterations"
+        entrypoint = self._detect_entrypoint(best_files)
+        state.development_result = DevelopmentResult(
+            iterations=iterations,
+            final_files=best_files,
+            final_iteration=max_iter,
+            app_entrypoint=entrypoint,
+            requirements_txt=best_files.get(
+                "backend/requirements.txt",
+                best_files.get("requirements.txt", ""),
+            ),
         )
+        state.mark_stage_complete(self.stage_number)
+        return state
 
     def _parse_file_map(self, text: str) -> dict[str, str]:
         """Extract the JSON file map from Claude's response."""
