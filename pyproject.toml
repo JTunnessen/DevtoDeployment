@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "devtodeploy"
+version = "0.1.0"
+description = "Multi-agent dev-to-deployment pipeline: idea → code → test → scan → deploy"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+readme = "README.md"
+authors = [
+  {name = "JT"}
+]
+
+dependencies = [
+  "anthropic>=0.25",
+  "typer[all]>=0.12",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "PyGithub>=2.3",
+  "GitPython>=3.1",
+  "python-jenkins>=1.8",
+  "semgrep",
+  "structlog>=24.1",
+  "rich>=13.7",
+  "tenacity>=8.3",
+  "python-dotenv>=1.0",
+  "httpx>=0.27",
+]
+
+[project.scripts]
+devtodeploy = "devtodeploy.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["devtodeploy*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
