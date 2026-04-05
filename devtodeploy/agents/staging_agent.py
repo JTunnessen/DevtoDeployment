@@ -79,9 +79,11 @@ class StagingAgent(BaseAgent):
 
     def _build_tf_variables(self, state: PipelineState, env: str) -> dict[str, str]:
         assert state.app_spec is not None
-        app_name = state.app_spec.suggested_repo_name.replace("-", "_")
+        # Cloud Run requires lowercase, hyphens only, max 49 chars
+        app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
+        service_name = f"{app_name}-{env}"[:49]
         base: dict[str, str] = {
-            "app_name": f"{app_name}_{env}",
+            "app_name": service_name,
             "environment": env,
         }
         if self.config.cloud_provider == CloudProvider.AZURE:

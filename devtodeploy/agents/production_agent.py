@@ -121,9 +121,10 @@ class ProductionAgent(BaseAgent):
 
     def _build_tf_variables(self, state: PipelineState) -> dict[str, str]:
         assert state.app_spec is not None
-        app_name = state.app_spec.suggested_repo_name.replace("-", "_")
+        app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
+        service_name = f"{app_name}-production"[:49]
         base: dict[str, str] = {
-            "app_name": f"{app_name}_production",
+            "app_name": service_name,
             "environment": "production",
             "min_replicas": "2",
             "max_replicas": "10",
