@@ -7,12 +7,11 @@ import structlog
 
 
 def configure_logging(level: str = "INFO") -> None:
-    """Configure structlog with console rendering and stdlib integration."""
+    """Configure structlog with console rendering."""
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.dev.ConsoleRenderer(colors=True),
         ],
