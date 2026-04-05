@@ -59,7 +59,7 @@ class CybersecAgent(BaseAgent):
 
         # --- Push both docs to GitHub ---
         gh = GitHubClient(self.config.github_token, self.config.github_org)
-        repo = gh.gh.get_repo(f"{self.config.github_org}/{state.github_repo_name}")
+        repo = gh.get_repo_from_url(state.github_repo_url)
 
         gh.create_or_update_file(
             repo,

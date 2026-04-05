@@ -19,6 +19,13 @@ class GitHubClient:
         self.org = org
         self._token = token
 
+    def get_repo_from_url(self, repo_url: str) -> Repository.Repository:
+        """Fetch a repo object using its HTML URL (e.g. https://github.com/owner/name)."""
+        # Strip trailing slashes / .git suffix, then take last two path segments
+        clean = repo_url.rstrip("/").removesuffix(".git")
+        full_name = "/".join(clean.split("/")[-2:])
+        return self.gh.get_repo(full_name)
+
     @with_retry(max_attempts=3, min_wait=2, max_wait=8, exceptions=(GithubException,))
     def create_repo(self, name: str, description: str = "", private: bool = False) -> Repository.Repository:
         """Create a new GitHub repository. Appends timestamp if name is taken."""

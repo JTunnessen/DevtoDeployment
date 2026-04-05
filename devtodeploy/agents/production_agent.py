@@ -97,7 +97,7 @@ class ProductionAgent(BaseAgent):
             return
         try:
             gh = GitHubClient(self.config.github_token, self.config.github_org)
-            repo = gh.gh.get_repo(f"{self.config.github_org}/{state.github_repo_name}")
+            repo = gh.get_repo_from_url(state.github_repo_url)
             gh.create_tag(repo, "v1.0.0", "Release v1.0.0")
             body = (
                 f"## {state.app_spec.app_name} v1.0.0\n\n"  # type: ignore[union-attr]
