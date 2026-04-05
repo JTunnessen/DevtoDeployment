@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from devtodeploy.agents.base import BaseAgent, PipelineHaltException
+from devtodeploy.agents.base import BaseAgent
 from devtodeploy.prompts import testing as prompts
 from devtodeploy.state import PipelineState
 from devtodeploy.utils.workspace import write_app_files
@@ -21,20 +21,36 @@ class FunctionalTestAgent(BaseAgent):
         assert state.app_spec is not None
 
         source_files = state.development_result.final_files
-        # Build a summary for the prompt (filenames + first 30 lines of each .py)
         source_summary = self._build_source_summary(source_files)
         spec_json = state.app_spec.model_dump_json(indent=2)
 
-        text = self._call_claude(
-            prompts.SYSTEM,
-            [{"role": "user", "content": prompts.user_prompt(source_summary, spec_json)}],
-            max_tokens=8096,
-        )
+        # Retry up to 3 times if Claude returns an empty or unparseable response
+        test_files: dict[str, str] = {}
+        for attempt in range(1, 4):
+            text = self._call_claude(
+                prompts.SYSTEM,
+                [{"role": "user", "content": prompts.user_prompt(source_summary, spec_json)}],
+                max_tokens=8096,
+            )
+            test_files = self._parse_file_map(text)
+            if test_files:
+                break
+            self.logger.warning(
+                "test_files_empty", attempt=attempt,
+                hint="Claude returned no parseable test files — retrying."
+            )
 
-        test_files = self._parse_file_map(text)
         if not test_files:
-            state.mark_stage_failed(self.stage_number, "Claude returned no test files")
-            raise PipelineHaltException("FunctionalTestAgent: no test files returned")
+            # Non-fatal: log warning, mark skipped, and continue the pipeline
+            self.logger.warning(
+                "test_generation_failed",
+                reason="Claude did not return test files after 3 attempts — skipping.",
+            )
+            state.mark_stage_skipped(
+                self.stage_number,
+                "Could not generate test files after 3 attempts — continuing pipeline.",
+            )
+            return state
 
         # Write test files into the app workspace
         write_app_files(self.config.workspace_dir, state.pipeline_id, test_files)
@@ -47,7 +63,6 @@ class FunctionalTestAgent(BaseAgent):
             self.logger.warning(
                 "test_pass_rate_below_threshold", pass_rate=pass_rate
             )
-            # We continue — low pass rate is a warning, not a hard stop
 
         state.mark_stage_complete(self.stage_number)
         self.logger.info("tests_written", file_count=len(test_files), pass_rate=pass_rate)
@@ -55,9 +70,15 @@ class FunctionalTestAgent(BaseAgent):
 
     def _parse_file_map(self, text: str) -> dict[str, str]:
         text = text.strip()
+        # Strip markdown fences if present
         if text.startswith("```"):
             lines = text.splitlines()
             text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        # Find the first { and last } in case there is surrounding text
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end + 1]
         try:
             data = json.loads(text)
             if isinstance(data, dict):
@@ -81,7 +102,6 @@ class FunctionalTestAgent(BaseAgent):
             cwd=str(app_dir),
         )
         output = result.stdout + result.stderr
-        # Parse "X passed, Y failed" from pytest output
         passed_count = failed_count = 0
         for line in output.splitlines():
             if "passed" in line:
@@ -111,5 +131,8 @@ class FunctionalTestAgent(BaseAgent):
         parts: list[str] = []
         for path, content in files.items():
             lines = content.splitlines()[:40]
-            parts.append(f"### {path}\n" + "\n".join(lines))
+            if path.endswith(".py"):
+                parts.append(f"### {path}\n" + "\n".join(lines))
+            else:
+                parts.append(f"### {path}  ({len(content.splitlines())} lines)")
         return "\n\n".join(parts)
