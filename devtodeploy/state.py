@@ -153,11 +153,11 @@ class PipelineState(BaseModel):
     def save(self, workspace_dir: str) -> None:
         path = Path(workspace_dir) / "state.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self.model_dump_json(indent=2))
+        path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
 
     @classmethod
     def load(cls, path: str) -> "PipelineState":
-        return cls.model_validate_json(Path(path).read_text())
+        return cls.model_validate_json(Path(path).read_text(encoding="utf-8"))
 
     def mark_stage_running(self, stage: int) -> None:
         self.current_stage = stage
