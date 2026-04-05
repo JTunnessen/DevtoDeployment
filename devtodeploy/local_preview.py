@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
-import signal
 import subprocess
 import sys
+import tempfile
 import time
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import anthropic
 import httpx
 from rich.console import Console
 from rich.panel import Panel
@@ -29,7 +27,7 @@ console = Console()
 logger = get_logger("local_preview")
 
 _PREVIEW_PORT = 8765
-_SERVER_READY_TIMEOUT = 45  # seconds to wait for the server to accept connections
+_SERVER_READY_TIMEOUT = 60  # seconds
 _HEALTH_URL = f"http://127.0.0.1:{_PREVIEW_PORT}/health"
 _ROOT_URL = f"http://127.0.0.1:{_PREVIEW_PORT}/"
 
@@ -43,6 +41,7 @@ class LocalPreviewGate:
 
     def __init__(self, config: "Config") -> None:
         self.config = config
+        import anthropic
         self.client = anthropic.Anthropic(api_key=config.anthropic_api_key)
 
     # ------------------------------------------------------------------
@@ -54,7 +53,9 @@ class LocalPreviewGate:
         assert state.app_spec is not None
 
         app_dir = Path(self.config.workspace_dir) / state.pipeline_id / "app"
-        preview_round = 0
+
+        # Ensure server dependencies are installed before trying to start
+        self._ensure_server_deps(state, app_dir)
 
         console.print()
         console.print(
@@ -62,33 +63,50 @@ class LocalPreviewGate:
                 "[bold]Local Preview[/bold]\n\n"
                 "Your generated application will launch in your browser.\n"
                 "Review it, request changes if needed, and type [bold green]no[/] "
-                "when you're happy to continue the pipeline.",
+                "when you're happy to continue the pipeline.\n\n"
+                "[dim]Type 'skip' at any prompt to skip the preview and continue.[/]",
                 border_style="cyan",
                 title="[bold cyan]INTERACTIVE PREVIEW[/]",
             )
         )
 
+        preview_round = 0
         while True:
             preview_round += 1
-            server_proc = self._start_server(state, app_dir)
+            server_proc, stderr_file = self._start_server(state, app_dir)
 
             try:
-                ready = self._wait_for_server()
+                ready = self._wait_for_server(server_proc)
+
                 if not ready:
+                    # Show what the server printed to stderr to help diagnose
+                    stderr_output = self._read_stderr(stderr_file)
                     console.print(
-                        "[yellow]Warning: server did not respond on "
-                        f"http://127.0.0.1:{_PREVIEW_PORT} within "
-                        f"{_SERVER_READY_TIMEOUT}s — opening browser anyway.[/]"
+                        f"\n  [red]Server did not start on "
+                        f"http://127.0.0.1:{_PREVIEW_PORT} "
+                        f"within {_SERVER_READY_TIMEOUT}s.[/]"
                     )
+                    if stderr_output:
+                        console.print("\n  [bold]Server error output:[/]")
+                        for line in stderr_output.splitlines()[-20:]:
+                            console.print(f"  [red dim]{line}[/]")
+
+                    skip = Confirm.ask(
+                        "\n  Skip local preview and continue the pipeline?",
+                        default=True,
+                    )
+                    if skip:
+                        state.local_preview_completed = True
+                        return state
+                    # Try again next round (server will be restarted)
+                    continue
 
                 console.print(
                     f"\n  [bold cyan]App running at[/] "
-                    f"[link=http://127.0.0.1:{_PREVIEW_PORT}]"
-                    f"http://127.0.0.1:{_PREVIEW_PORT}[/link]\n"
+                    f"http://127.0.0.1:{_PREVIEW_PORT}\n"
                 )
                 webbrowser.open(_ROOT_URL)
 
-                # Ask the creator if they want changes
                 wants_changes = Confirm.ask(
                     "\n  Would you like to make any changes or enhancements?",
                     default=False,
@@ -100,11 +118,13 @@ class LocalPreviewGate:
                     )
                     break
 
-                # Collect one or more change requests
                 change_requests = self._collect_change_requests()
+                if change_requests == ["skip"]:
+                    break
 
             finally:
                 self._stop_server(server_proc)
+                self._cleanup_stderr(stderr_file)
 
             # Apply changes via Claude
             files_before = list(state.development_result.final_files.keys())
@@ -144,11 +164,14 @@ class LocalPreviewGate:
             "\n  Enter your change requests below.\n"
             "  Press [bold]Enter[/] after each one.\n"
             "  Type [bold]done[/] on a blank line when finished.\n"
+            "  Type [bold]skip[/] to skip the preview entirely.\n"
         )
         requests: list[str] = []
         idx = 1
         while True:
             entry = Prompt.ask(f"  Change {idx}").strip()
+            if entry.lower() == "skip":
+                return ["skip"]
             if entry.lower() in ("done", ""):
                 if not requests:
                     console.print("  [yellow]Please enter at least one change.[/]")
@@ -191,7 +214,6 @@ class LocalPreviewGate:
         )
         text = response.content[0].text.strip()  # type: ignore[union-attr]
 
-        # Strip markdown fences
         if text.startswith("```"):
             lines = text.splitlines()
             text = "\n".join(
@@ -207,13 +229,48 @@ class LocalPreviewGate:
         return {}
 
     # ------------------------------------------------------------------
+    # Dependency installation
+    # ------------------------------------------------------------------
+
+    def _ensure_server_deps(self, state: PipelineState, app_dir: Path) -> None:
+        """Make sure uvicorn/flask is installed so the preview server can start."""
+        framework = state.app_spec.backend_framework if state.app_spec else "fastapi"  # type: ignore[union-attr]
+
+        # Install the app's own requirements first
+        for req_candidate in [
+            app_dir / "backend" / "requirements.txt",
+            app_dir / "requirements.txt",
+        ]:
+            if req_candidate.exists():
+                console.print("  [dim]Installing app dependencies…[/]")
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-r", str(req_candidate), "-q"],
+                    capture_output=True,
+                )
+                break
+
+        # Ensure the server runner itself is available
+        if framework == "flask":
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "flask", "-q"],
+                capture_output=True,
+            )
+        else:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "uvicorn[standard]", "fastapi", "-q"],
+                capture_output=True,
+            )
+
+    # ------------------------------------------------------------------
     # Local server lifecycle
     # ------------------------------------------------------------------
 
     def _start_server(
         self, state: PipelineState, app_dir: Path
-    ) -> subprocess.Popen:
-        """Launch the app in a subprocess on _PREVIEW_PORT."""
+    ) -> tuple[subprocess.Popen, str]:
+        """Launch the app in a subprocess on _PREVIEW_PORT.
+        Returns (process, stderr_temp_file_path).
+        """
         assert state.app_spec is not None
         framework = state.app_spec.backend_framework
         entrypoint = (
@@ -225,22 +282,26 @@ class LocalPreviewGate:
         cmd = self._build_server_command(framework, entrypoint, app_dir)
         env = {**os.environ, "PYTHONPATH": str(app_dir)}
 
+        # Write stderr to a temp file so we can display it on failure
+        stderr_fd, stderr_path = tempfile.mkstemp(suffix=".txt", prefix="devtodeploy_server_")
+        os.close(stderr_fd)
+
         logger.info("starting_local_server", cmd=" ".join(cmd), port=_PREVIEW_PORT)
         proc = subprocess.Popen(
             cmd,
             cwd=str(app_dir),
             env=env,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=open(stderr_path, "w"),
         )
-        return proc
+        return proc, stderr_path
 
     def _build_server_command(
         self, framework: str, entrypoint: str, app_dir: Path
     ) -> list[str]:
         """Return the shell command list to start the dev server."""
-        # Convert file path like "backend/main.py" → module "backend.main"
-        module = entrypoint.replace("/", ".").removesuffix(".py")
+        # Convert "backend/main.py" → "backend.main"
+        module = entrypoint.replace("\\", "/").replace("/", ".").removesuffix(".py")
 
         if framework == "flask":
             return [
@@ -249,7 +310,6 @@ class LocalPreviewGate:
                 "--port", str(_PREVIEW_PORT),
                 "--no-debugger",
             ]
-        # FastAPI (default)
         return [
             sys.executable, "-m", "uvicorn",
             f"{module}:app",
@@ -258,10 +318,14 @@ class LocalPreviewGate:
             "--reload",
         ]
 
-    def _wait_for_server(self) -> bool:
-        """Poll until the server responds or the timeout is reached."""
+    def _wait_for_server(self, proc: subprocess.Popen) -> bool:
+        """Poll until the server responds, times out, or the process exits early."""
         deadline = time.time() + _SERVER_READY_TIMEOUT
         while time.time() < deadline:
+            # Detect immediate crash
+            if proc.poll() is not None:
+                logger.warning("server_process_exited_early", returncode=proc.returncode)
+                return False
             try:
                 resp = httpx.get(_HEALTH_URL, timeout=2)
                 if resp.status_code < 500:
@@ -271,10 +335,21 @@ class LocalPreviewGate:
             time.sleep(1)
         return False
 
+    def _read_stderr(self, stderr_path: str) -> str:
+        try:
+            return Path(stderr_path).read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    def _cleanup_stderr(self, stderr_path: str) -> None:
+        try:
+            Path(stderr_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
     def _stop_server(self, proc: subprocess.Popen) -> None:
-        """Gracefully terminate the local server process."""
         if proc.poll() is not None:
-            return  # already exited
+            return
         try:
             proc.terminate()
             proc.wait(timeout=5)
