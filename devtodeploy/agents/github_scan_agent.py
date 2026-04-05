@@ -32,6 +32,9 @@ class GitHubScanAgent(BaseAgent):
         state.github_repo_name = repo.name
         state.github_repo_url = repo.html_url
 
+        # Ensure .gitignore exists so .env is never committed to the generated repo
+        self._ensure_gitignore(app_dir)
+
         # Push code
         gh.push_directory(repo, str(app_dir), commit_msg="feat: initial generated application")
         self.logger.info("code_pushed", url=state.github_repo_url)
@@ -113,3 +116,52 @@ class GitHubScanAgent(BaseAgent):
             scan_passed=state.scan_result.passed if state.scan_result else False,
         )
         return state
+
+    # ------------------------------------------------------------------
+
+    _GITIGNORE_CONTENT = """\
+# Environment — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+"""
+
+    def _ensure_gitignore(self, app_dir: Path) -> None:
+        """Write a .gitignore to app_dir if one isn't already present."""
+        gitignore_path = app_dir / ".gitignore"
+        if gitignore_path.exists():
+            # Make sure .env is in it; append if missing
+            existing = gitignore_path.read_text(encoding="utf-8")
+            if ".env" not in existing:
+                with gitignore_path.open("a", encoding="utf-8") as f:
+                    f.write("\n# Environment — never commit secrets\n.env\n.env.*\n!.env.example\n")
+                self.logger.info("gitignore_env_appended")
+        else:
+            gitignore_path.write_text(self._GITIGNORE_CONTENT, encoding="utf-8")
+            self.logger.info("gitignore_created")
