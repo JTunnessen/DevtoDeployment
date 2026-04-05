@@ -58,7 +58,7 @@ class ScanFinding(BaseModel):
 
 
 class ScanResult(BaseModel):
-    tool: str = "semgrep"
+    tool: str = "bandit+safety"
     findings: list[ScanFinding] = Field(default_factory=list)
     high_count: int = 0
     medium_count: int = 0

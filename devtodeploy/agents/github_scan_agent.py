@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 from devtodeploy.agents.base import BaseAgent, PipelineHaltException
+from devtodeploy.integrations.bandit_runner import BanditRunner
 from devtodeploy.integrations.github_client import GitHubClient
-from devtodeploy.integrations.semgrep_runner import SemgrepRunner
 from devtodeploy.state import PipelineState
 from devtodeploy.utils.workspace import write_app_files
 
@@ -20,7 +20,7 @@ class GitHubScanAgent(BaseAgent):
         assert state.app_spec is not None
 
         gh = GitHubClient(self.config.github_token, self.config.github_org)
-        scanner = SemgrepRunner()
+        scanner = BanditRunner()
         app_dir = Path(self.config.workspace_dir) / state.pipeline_id / "app"
 
         # Create GitHub repo
@@ -38,7 +38,17 @@ class GitHubScanAgent(BaseAgent):
 
         # Semgrep scan + auto-remediation loop (up to 3 cycles)
         for cycle in range(1, 4):
-            scan = scanner.run(str(app_dir))
+            req_file = state.development_result.requirements_txt and str(
+                next(
+                    (
+                        app_dir / p
+                        for p in ("backend/requirements.txt", "requirements.txt")
+                        if (app_dir / p).exists()
+                    ),
+                    "",
+                )
+            )
+            scan = scanner.run(str(app_dir), requirements_file=req_file or "")
             scan.remediation_cycles = cycle - 1
 
             if scan.passed:

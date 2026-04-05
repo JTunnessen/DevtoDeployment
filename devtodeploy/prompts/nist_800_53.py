@@ -59,7 +59,7 @@ def user_prompt(
         "Generate the NIST SP 800-53 Rev5 control assessment document.\n\n"
         f"App spec:\n{app_spec_json}\n\n"
         f"Source files (paths and key patterns):\n{source_files_summary}\n\n"
-        f"Semgrep static analysis findings:\n{scan_findings_json}\n\n"
+        f"Bandit + Safety static analysis findings:\n{scan_findings_json}\n\n"
         f"Today's date: {today_date}\n\n"
         "Return the full NIST_800_53.md Markdown content now."
     )

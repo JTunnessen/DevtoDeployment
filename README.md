@@ -22,7 +22,7 @@ devtodeploy run "A task management web app with Kanban boards and team assignmen
 | 2 | **DevelopmentAgent** | Generates full-stack code (FastAPI backend + HTML/JS frontend), self-checks up to 10 iterations |
 | — | **Local Preview Loop** | Launches the app locally, opens your browser, and lets you request changes — repeat until satisfied |
 | 3 | **FunctionalTestAgent** | Writes and runs pytest tests |
-| 4 | **GitHubScanAgent** | Creates a GitHub repo, pushes code, runs Semgrep static analysis, auto-remediates HIGH findings |
+| 4 | **GitHubScanAgent** | Creates a GitHub repo, pushes code, runs Bandit + Safety static analysis, auto-remediates HIGH findings |
 | 5 | **ReadmeAgent** | Generates a `README.md` for the app and pushes it to GitHub |
 | 6 | **JenkinsAgent** | Triggers a Jenkins functional test job and waits for results |
 | 7 | **CybersecAgent** | Generates `SECURITY.md` (OWASP Top 10) and `NIST_800_53.md` (SP 800-53 Rev5 control assessment) |
@@ -191,7 +191,7 @@ After staging is deployed and load-tested, the pipeline pauses and displays a su
 
 Every generated application receives two security documents, automatically committed to its GitHub repository:
 
-- **`SECURITY.md`** — OWASP Top 10 alignment checklist, Semgrep findings summary, controls implemented, and hardening recommendations
+- **`SECURITY.md`** — OWASP Top 10 alignment checklist, Bandit + Safety findings summary, controls implemented, and hardening recommendations
 - **`NIST_800_53.md`** — NIST SP 800-53 Rev5 control assessment covering Access Control (AC), Audit & Accountability (AU), Configuration Management (CM), Identification & Authentication (IA), System & Communications Protection (SC), System & Information Integrity (SI), Incident Response (IR), System & Services Acquisition (SA), and Risk Assessment (RA)
 
 ---
@@ -232,7 +232,7 @@ Pass criteria: p95 response time < 2,000ms and error rate < 5%.
 DevtoDeployment/
 ├── devtodeploy/
 │   ├── agents/          # One module per pipeline stage
-│   ├── integrations/    # GitHub, Jenkins, Semgrep, Terraform, k6 wrappers
+│   ├── integrations/    # GitHub, Jenkins, Bandit + Safety, Terraform, k6 wrappers
 │   ├── prompts/         # Claude prompt templates
 │   ├── utils/           # Logging, retry, workspace helpers
 │   ├── cli.py           # Typer CLI entry point

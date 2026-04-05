@@ -48,6 +48,6 @@ class ReadmeAgent(BaseAgent):
             return "No scan results available."
         sr = state.scan_result
         return (
-            f"Semgrep scan: HIGH={sr.high_count}, MEDIUM={sr.medium_count}, "
+            f"Bandit + Safety scan: HIGH={sr.high_count}, MEDIUM={sr.medium_count}, "
             f"LOW={sr.low_count}. Passed: {sr.passed}."
         )
