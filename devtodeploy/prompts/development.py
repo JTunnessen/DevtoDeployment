@@ -27,7 +27,16 @@ Rules for the generated application:
 8. Include a health-check endpoint GET /health returning {"status": "ok"}.
 9. Do NOT include any TODO comments or placeholder logic — all code must be functional.
 10. Return ONLY the JSON object. No markdown, no explanation.
-"""
+11. Pydantic: use pydantic v2 syntax ONLY. This means:
+    - Use `model_dump()` not `.dict()`
+    - Use `model_validate()` not `.parse_obj()`
+    - Use `@field_validator` not `@validator`
+    - Use `@model_validator` not `@root_validator`
+    - Always annotate every field with a type (e.g. `name: str`, never bare `name`)
+    - Pin `pydantic>=2.0` in requirements.txt if pydantic is used
+12. FastAPI: use the current API style — `Annotated` types for dependencies, lifespan
+    context manager instead of deprecated `on_event`. Pin `fastapi>=0.100` and
+    `uvicorn[standard]>=0.20` in requirements.txt."""
 
 
 def initial_prompt(app_spec_json: str) -> str:

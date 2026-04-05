@@ -17,7 +17,8 @@ Describe what security controls exist in the code:
 - Dependency management
 
 ## 2. Static Analysis Results
-Summarize the Semgrep findings provided. For each finding include:
+Summarize the Bandit (Python security linter) and Safety (dependency CVE
+checker) findings provided. For each finding include:
 - Rule ID, severity, file path
 - Whether it was remediated or accepted as a known risk
 
@@ -46,7 +47,7 @@ def user_prompt(
         "Generate SECURITY.md for this application.\n\n"
         f"App spec:\n{app_spec_json}\n\n"
         f"Source file summary:\n{source_files_summary}\n\n"
-        f"Semgrep findings (JSON):\n{scan_findings_json}\n\n"
+        f"Bandit + Safety scan findings (JSON):\n{scan_findings_json}\n\n"
         f"Jenkins test summary:\n{jenkins_summary}\n\n"
         "Return the full SECURITY.md Markdown content now."
     )

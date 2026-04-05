@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "devtodeploy"
@@ -21,7 +21,8 @@ dependencies = [
   "PyGithub>=2.3",
   "GitPython>=3.1",
   "python-jenkins>=1.8",
-  "semgrep",
+  "bandit>=1.7",
+  "safety>=3.0",
   "structlog>=24.1",
   "rich>=13.7",
   "tenacity>=8.3",
