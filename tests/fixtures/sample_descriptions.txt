@@ -1,0 +1,29 @@
+# Sample application descriptions for manual testing
+# Each description is separated by a blank line beginning with ---
+
+---
+A task management web application where users can create projects, add tasks
+with due dates, assign them to team members, and track progress using a
+Kanban board with drag-and-drop support.
+
+---
+A recipe sharing platform where home cooks can submit recipes with
+ingredients, steps, and photos. Users can search by ingredient, dietary
+restriction, or cuisine. Includes a meal planning calendar and shopping
+list generator.
+
+---
+A simple personal finance tracker where users can log income and expenses
+by category, view monthly summaries, set spending limits, and export reports
+as CSV. No external integrations required.
+
+---
+A real-time collaborative notes application where multiple users can edit
+the same document simultaneously, see each other's cursors, and view a
+full edit history with the ability to roll back to any version.
+
+---
+An API rate-limiting and analytics service that sits in front of existing
+APIs, tracks usage per API key, enforces configurable rate limits, and
+provides a dashboard showing request volume, error rates, and latency
+over time.
