@@ -33,9 +33,19 @@ def run(
         "--stages",
         help="Comma-separated stage numbers to run (e.g. 1,2,3). Runs all if omitted.",
     ),
+    no_preview: bool = typer.Option(
+        False,
+        "--no-preview",
+        help="Skip the interactive local preview loop and proceed directly to testing.",
+    ),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging level"),
 ) -> None:
-    """Run the full dev-to-deployment pipeline from a natural language description."""
+    """Run the full dev-to-deployment pipeline from a natural language description.
+
+    After code generation (Stage 2) the app is launched locally in your browser
+    so you can review it and request changes before the pipeline continues.
+    Use --no-preview to skip this step for automated/CI runs.
+    """
     configure_logging(log_level)
     config = _load_config(cloud)
 
@@ -48,7 +58,7 @@ def run(
             raise typer.Exit(1)
 
     from devtodeploy.orchestrator import Orchestrator
-    orchestrator = Orchestrator(config)
+    orchestrator = Orchestrator(config, skip_preview=no_preview)
     orchestrator.run(description, stage_filter=stage_filter)
 
 
@@ -56,6 +66,11 @@ def run(
 def resume(
     state_path: str = typer.Argument(..., help="Path to a saved state.json file"),
     cloud: Optional[str] = typer.Option(None, "--cloud", "-c", help="Cloud provider override: azure | gcp"),
+    no_preview: bool = typer.Option(
+        False,
+        "--no-preview",
+        help="Skip the interactive local preview loop.",
+    ),
     log_level: str = typer.Option("INFO", "--log-level", help="Logging level"),
 ) -> None:
     """Resume a previously halted or rejected pipeline from its saved state."""
@@ -63,7 +78,7 @@ def resume(
     config = _load_config(cloud)
 
     from devtodeploy.orchestrator import Orchestrator
-    orchestrator = Orchestrator(config)
+    orchestrator = Orchestrator(config, skip_preview=no_preview)
     orchestrator.resume(state_path, cloud_override=cloud)
 
 
@@ -101,6 +116,14 @@ def status(
         icon = icons.get(s, "?")
         err = f"  [red dim]{state.stage_errors.get(num, '')}[/]" if num in state.stage_errors else ""
         console.print(f"  {icon} Stage {num}: {name} ({s.value}){err}")
+
+    # Local preview summary
+    if state.local_preview_iterations:
+        n = len(state.local_preview_iterations)
+        console.print(
+            f"\n  [cyan]↺[/] Local preview: {n} change "
+            f"{'round' if n == 1 else 'rounds'} applied"
+        )
 
     console.print()
     if state.github_repo_url:

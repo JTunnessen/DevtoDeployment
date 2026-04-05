@@ -19,6 +19,7 @@ from devtodeploy.agents.production_agent import ProductionAgent
 from devtodeploy.agents.readme_agent import ReadmeAgent
 from devtodeploy.agents.staging_agent import StagingAgent
 from devtodeploy.config import Config
+from devtodeploy.local_preview import LocalPreviewGate
 from devtodeploy.state import AppSpec, PipelineState, StageStatus
 from devtodeploy.utils.logging import get_logger
 from devtodeploy.utils.workspace import ensure_workspace
@@ -111,8 +112,9 @@ class HumanApprovalGate:
 
 
 class Orchestrator:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, skip_preview: bool = False) -> None:
         self.config = config
+        self.skip_preview = skip_preview
         self.agents = [AgentClass(config) for AgentClass in PIPELINE_STAGES]
         self.production_agent = ProductionAgent(config)
 
@@ -190,6 +192,31 @@ class Orchestrator:
                 )
                 state.save(str(save_path.parent))
                 return state
+
+            # After Stage 2 (DevelopmentAgent), run the interactive local preview
+            # loop so the creator can review the app and request changes before
+            # the pipeline continues to testing and deployment.
+            if (
+                agent.stage_number == 2
+                and not self.skip_preview
+                and not state.local_preview_completed
+            ):
+                console.rule("[bold cyan]Local Preview & Iterative Refinement[/]", style="cyan")
+                try:
+                    preview = LocalPreviewGate(self.config)
+                    state = preview.run(state)
+                    state.save(str(save_path.parent))
+                    n = len(state.local_preview_iterations)
+                    console.print(
+                        f"  [cyan]✓[/] Local preview complete "
+                        f"({n} change {'round' if n == 1 else 'rounds'} applied)"
+                    )
+                except Exception as exc:
+                    # Non-fatal: log the error and continue the pipeline
+                    logger.warning("local_preview_error", error=str(exc))
+                    console.print(
+                        f"  [yellow]⚠ Local preview encountered an error and was skipped: {exc}[/]"
+                    )
 
         # Stop here if stage_filter doesn't include stage 9
         if stage_filter and 9 not in stage_filter:
