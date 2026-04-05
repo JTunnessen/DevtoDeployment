@@ -6,7 +6,7 @@ from pathlib import Path
 
 from devtodeploy.config import CloudProvider, DeploymentTarget
 
-# Maps (cloud, target) → module directory name
+# Maps (cloud, target) -> module directory name
 _MODULE_MAP: dict[tuple[CloudProvider, DeploymentTarget], str] = {
     (CloudProvider.AZURE, DeploymentTarget.APP_SERVICE): "azure_appservice",
     (CloudProvider.AZURE, DeploymentTarget.AKS): "azure_aks",
@@ -15,164 +15,165 @@ _MODULE_MAP: dict[tuple[CloudProvider, DeploymentTarget], str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Cloud-specific root main.tf templates (provider in root, not in module)
+# Cloud-specific root main.tf templates
+# Provider block lives here (root), NOT inside modules.
 # ---------------------------------------------------------------------------
 
-_GCP_CLOUDRUN_MAIN = """\
-terraform {{
-  required_version = ">= 1.7"
-  required_providers {{
-    google = {{
-      source  = "hashicorp/google"
-      version = "~> 5.0"
-    }}
-  }}
-}}
+_GCP_CLOUDRUN_MAIN = (
+    'terraform {\n'
+    '  required_version = ">= 1.7"\n'
+    '  required_providers {\n'
+    '    google = {\n'
+    '      source  = "hashicorp/google"\n'
+    '      version = "~> 5.0"\n'
+    '    }\n'
+    '  }\n'
+    '}\n'
+    '\n'
+    'provider "google" {\n'
+    '  project = var.project_id\n'
+    '  region  = var.region\n'
+    '}\n'
+    '\n'
+    'module "gcp_cloudrun" {\n'
+    '  source = "./modules/gcp_cloudrun"\n'
+    '\n'
+    '  app_name     = var.app_name\n'
+    '  environment  = var.environment\n'
+    '  project_id   = var.project_id\n'
+    '  region       = var.region\n'
+    '  min_replicas = var.min_replicas\n'
+    '  max_replicas = var.max_replicas\n'
+    '  docker_image = var.docker_image != "" ? var.docker_image : "gcr.io/cloudrun/hello"\n'
+    '}\n'
+    '\n'
+    'output "app_url" {\n'
+    '  value = module.gcp_cloudrun.app_url\n'
+    '}\n'
+)
 
-provider "google" {{
-  project = var.project_id
-  region  = var.region
-}}
+_GCP_GKE_MAIN = (
+    'terraform {\n'
+    '  required_version = ">= 1.7"\n'
+    '  required_providers {\n'
+    '    google = {\n'
+    '      source  = "hashicorp/google"\n'
+    '      version = "~> 5.0"\n'
+    '    }\n'
+    '  }\n'
+    '}\n'
+    '\n'
+    'provider "google" {\n'
+    '  project = var.project_id\n'
+    '  region  = var.region\n'
+    '}\n'
+    '\n'
+    'module "gcp_gke" {\n'
+    '  source = "./modules/gcp_gke"\n'
+    '\n'
+    '  app_name     = var.app_name\n'
+    '  environment  = var.environment\n'
+    '  project_id   = var.project_id\n'
+    '  region       = var.region\n'
+    '  min_replicas = var.min_replicas\n'
+    '  max_replicas = var.max_replicas\n'
+    '  docker_image = var.docker_image\n'
+    '}\n'
+    '\n'
+    'output "app_url" {\n'
+    '  value = module.gcp_gke.app_url\n'
+    '}\n'
+)
 
-module "gcp_cloudrun" {{
-  source = "./modules/gcp_cloudrun"
+_AZURE_APPSERVICE_MAIN = (
+    'terraform {\n'
+    '  required_version = ">= 1.7"\n'
+    '  required_providers {\n'
+    '    azurerm = {\n'
+    '      source  = "hashicorp/azurerm"\n'
+    '      version = "~> 3.90"\n'
+    '    }\n'
+    '  }\n'
+    '}\n'
+    '\n'
+    'provider "azurerm" {\n'
+    '  features {}\n'
+    '  subscription_id = var.subscription_id\n'
+    '}\n'
+    '\n'
+    'module "azure_appservice" {\n'
+    '  source = "./modules/azure_appservice"\n'
+    '\n'
+    '  app_name        = var.app_name\n'
+    '  environment     = var.environment\n'
+    '  subscription_id = var.subscription_id\n'
+    '  resource_group  = var.resource_group\n'
+    '  location        = var.location\n'
+    '  sku_name        = "B1"\n'
+    '  min_replicas    = var.min_replicas\n'
+    '  max_replicas    = var.max_replicas\n'
+    '  docker_image    = var.docker_image\n'
+    '}\n'
+    '\n'
+    'output "app_url" {\n'
+    '  value = module.azure_appservice.app_url\n'
+    '}\n'
+)
 
-  app_name     = var.app_name
-  environment  = var.environment
-  project_id   = var.project_id
-  region       = var.region
-  min_replicas = var.min_replicas
-  max_replicas = var.max_replicas
-  docker_image = var.docker_image != "" ? var.docker_image : "gcr.io/cloudrun/hello"
-}}
+_AZURE_AKS_MAIN = (
+    'terraform {\n'
+    '  required_version = ">= 1.7"\n'
+    '  required_providers {\n'
+    '    azurerm = {\n'
+    '      source  = "hashicorp/azurerm"\n'
+    '      version = "~> 3.90"\n'
+    '    }\n'
+    '  }\n'
+    '}\n'
+    '\n'
+    'provider "azurerm" {\n'
+    '  features {}\n'
+    '  subscription_id = var.subscription_id\n'
+    '}\n'
+    '\n'
+    'module "azure_aks" {\n'
+    '  source = "./modules/azure_aks"\n'
+    '\n'
+    '  app_name        = var.app_name\n'
+    '  environment     = var.environment\n'
+    '  subscription_id = var.subscription_id\n'
+    '  resource_group  = var.resource_group\n'
+    '  location        = var.location\n'
+    '  min_replicas    = var.min_replicas\n'
+    '  max_replicas    = var.max_replicas\n'
+    '  docker_image    = var.docker_image\n'
+    '}\n'
+    '\n'
+    'output "app_url" {\n'
+    '  value = module.azure_aks.app_url\n'
+    '}\n'
+)
 
-output "app_url" {{
-  value = module.gcp_cloudrun.app_url
-}}
-"""
+_GCP_VARIABLES = (
+    'variable "app_name"     { type = string }\n'
+    'variable "environment"  { type = string\n  default = "staging" }\n'
+    'variable "project_id"   { type = string\n  default = "" }\n'
+    'variable "region"       { type = string\n  default = "us-central1" }\n'
+    'variable "min_replicas" { type = number\n  default = 1 }\n'
+    'variable "max_replicas" { type = number\n  default = 3 }\n'
+    'variable "docker_image" { type = string\n  default = "" }\n'
+)
 
-_GCP_GKE_MAIN = """\
-terraform {{
-  required_version = ">= 1.7"
-  required_providers {{
-    google = {{
-      source  = "hashicorp/google"
-      version = "~> 5.0"
-    }}
-  }}
-}}
-
-provider "google" {{
-  project = var.project_id
-  region  = var.region
-}}
-
-module "gcp_gke" {{
-  source = "./modules/gcp_gke"
-
-  app_name     = var.app_name
-  environment  = var.environment
-  project_id   = var.project_id
-  region       = var.region
-  min_replicas = var.min_replicas
-  max_replicas = var.max_replicas
-  docker_image = var.docker_image
-}}
-
-output "app_url" {{
-  value = module.gcp_gke.app_url
-}}
-"""
-
-_AZURE_APPSERVICE_MAIN = """\
-terraform {{
-  required_version = ">= 1.7"
-  required_providers {{
-    azurerm = {{
-      source  = "hashicorp/azurerm"
-      version = "~> 3.90"
-    }}
-  }}
-}}
-
-provider "azurerm" {{
-  features {{}}
-  subscription_id = var.subscription_id
-}}
-
-module "azure_appservice" {{
-  source = "./modules/azure_appservice"
-
-  app_name        = var.app_name
-  environment     = var.environment
-  subscription_id = var.subscription_id
-  resource_group  = var.resource_group
-  location        = var.location
-  sku_name        = "B1"
-  min_replicas    = var.min_replicas
-  max_replicas    = var.max_replicas
-  docker_image    = var.docker_image
-}}
-
-output "app_url" {{
-  value = module.azure_appservice.app_url
-}}
-"""
-
-_AZURE_AKS_MAIN = """\
-terraform {{
-  required_version = ">= 1.7"
-  required_providers {{
-    azurerm = {{
-      source  = "hashicorp/azurerm"
-      version = "~> 3.90"
-    }}
-  }}
-}}
-
-provider "azurerm" {{
-  features {{}}
-  subscription_id = var.subscription_id
-}}
-
-module "azure_aks" {{
-  source = "./modules/azure_aks"
-
-  app_name        = var.app_name
-  environment     = var.environment
-  subscription_id = var.subscription_id
-  resource_group  = var.resource_group
-  location        = var.location
-  min_replicas    = var.min_replicas
-  max_replicas    = var.max_replicas
-  docker_image    = var.docker_image
-}}
-
-output "app_url" {{
-  value = module.azure_aks.app_url
-}}
-"""
-
-_GCP_VARIABLES = """\
-variable "app_name"     { type = string }
-variable "environment"  { type = string  default = "staging" }
-variable "project_id"   { type = string  default = "" }
-variable "region"       { type = string  default = "us-central1" }
-variable "min_replicas" { type = number  default = 1 }
-variable "max_replicas" { type = number  default = 3 }
-variable "docker_image" { type = string  default = "" }
-"""
-
-_AZURE_VARIABLES = """\
-variable "app_name"        { type = string }
-variable "environment"     { type = string  default = "staging" }
-variable "subscription_id" { type = string  default = "" }
-variable "resource_group"  { type = string  default = "devtodeploy-rg" }
-variable "location"        { type = string  default = "eastus" }
-variable "min_replicas"    { type = number  default = 1 }
-variable "max_replicas"    { type = number  default = 3 }
-variable "docker_image"    { type = string  default = "" }
-"""
+_AZURE_VARIABLES = (
+    'variable "app_name"        { type = string }\n'
+    'variable "environment"     { type = string\n  default = "staging" }\n'
+    'variable "subscription_id" { type = string\n  default = "" }\n'
+    'variable "resource_group"  { type = string\n  default = "devtodeploy-rg" }\n'
+    'variable "location"        { type = string\n  default = "eastus" }\n'
+    'variable "min_replicas"    { type = number\n  default = 1 }\n'
+    'variable "max_replicas"    { type = number\n  default = 3 }\n'
+    'variable "docker_image"    { type = string\n  default = "" }\n'
+)
 
 _MAIN_TF_MAP: dict[tuple[CloudProvider, DeploymentTarget], str] = {
     (CloudProvider.GCP, DeploymentTarget.CLOUD_RUN): _GCP_CLOUDRUN_MAIN,
@@ -190,30 +191,28 @@ def prepare_terraform_workspace(
     deployment_target: DeploymentTarget,
 ) -> str:
     """
-    Build a self-contained Terraform workspace directory for the given environment.
+    Build a self-contained Terraform workspace for the given environment.
 
-    Generates a cloud-specific main.tf (with the provider block in the root,
-    not in the module) and copies only the relevant module directory.
-    Returns the path to the workspace directory.
+    Generates a cloud-specific main.tf (provider in root, not in module)
+    and copies only the relevant module. Returns the workspace path.
     """
     repo_root = Path(__file__).parent.parent.parent
     dest = Path(workspace_dir) / pipeline_id / "terraform" / env
     dest.mkdir(parents=True, exist_ok=True)
 
-    # Write cloud-specific main.tf
     key = (cloud_provider, deployment_target)
+
+    # Write cloud-specific main.tf
     main_tf = _MAIN_TF_MAP.get(key, _GCP_CLOUDRUN_MAIN)
     (dest / "main.tf").write_text(main_tf, encoding="utf-8")
 
     # Write variables.tf
     variables_tf = (
-        _GCP_VARIABLES
-        if cloud_provider == CloudProvider.GCP
-        else _AZURE_VARIABLES
+        _GCP_VARIABLES if cloud_provider == CloudProvider.GCP else _AZURE_VARIABLES
     )
     (dest / "variables.tf").write_text(variables_tf, encoding="utf-8")
 
-    # Copy the selected module
+    # Copy only the relevant module
     module_name = _MODULE_MAP.get(key)
     if module_name:
         module_src = repo_root / "terraform" / "modules" / module_name
