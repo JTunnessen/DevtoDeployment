@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import httpx
@@ -10,6 +9,7 @@ from devtodeploy.config import CloudProvider
 from devtodeploy.integrations.github_client import GitHubClient
 from devtodeploy.integrations.terraform_runner import TerraformRunner
 from devtodeploy.state import DeploymentInfo, PipelineState
+from devtodeploy.utils.terraform_workspace import prepare_terraform_workspace
 
 
 class ProductionAgent(BaseAgent):
@@ -39,7 +39,13 @@ class ProductionAgent(BaseAgent):
             state.mark_stage_failed(self.stage_number, msg)
             raise PipelineHaltException(msg)
 
-        tf_work_dir = self._prepare_terraform_workspace(state)
+        tf_work_dir = prepare_terraform_workspace(
+            self.config.workspace_dir,
+            state.pipeline_id,
+            "production",
+            self.config.cloud_provider,
+            self.config.deployment_target,
+        )
         tf = TerraformRunner(tf_work_dir)
         variables = self._build_tf_variables(state)
 
@@ -113,31 +119,12 @@ class ProductionAgent(BaseAgent):
         except Exception as exc:
             self.logger.warning("release_creation_failed", error=str(exc))
 
-    def _prepare_terraform_workspace(self, state: PipelineState) -> str:
-        repo_root = Path(__file__).parent.parent.parent
-        src = repo_root / "terraform" / "production"
-        dest = Path(self.config.workspace_dir) / state.pipeline_id / "terraform" / "production"
-        dest.mkdir(parents=True, exist_ok=True)
-        for tf_file in src.glob("*.tf"):
-            shutil.copy(tf_file, dest / tf_file.name)
-
-        from devtodeploy.agents.staging_agent import _MODULE_MAP
-        module_key = (self.config.cloud_provider, self.config.deployment_target)
-        module_name = _MODULE_MAP.get(module_key, "azure_appservice")
-        module_src = repo_root / "terraform" / "modules" / module_name
-        module_dest = dest / "modules" / module_name
-        if module_src.exists():
-            shutil.copytree(str(module_src), str(module_dest), dirs_exist_ok=True)
-
-        return str(dest)
-
     def _build_tf_variables(self, state: PipelineState) -> dict[str, str]:
         assert state.app_spec is not None
         app_name = state.app_spec.suggested_repo_name.replace("-", "_")
         base: dict[str, str] = {
             "app_name": f"{app_name}_production",
             "environment": "production",
-            "cloud_provider": self.config.cloud_provider.value,
             "min_replicas": "2",
             "max_replicas": "10",
         }

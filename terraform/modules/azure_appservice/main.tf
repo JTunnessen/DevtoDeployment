@@ -7,11 +7,6 @@ terraform {
   }
 }
 
-provider "azurerm" {
-  features {}
-  subscription_id = var.subscription_id
-}
-
 resource "azurerm_service_plan" "plan" {
   name                = "${var.app_name}-plan"
   resource_group_name = var.resource_group
