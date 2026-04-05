@@ -154,26 +154,69 @@ _AZURE_AKS_MAIN = (
     '}\n'
 )
 
-_GCP_VARIABLES = (
-    'variable "app_name"     { type = string }\n'
-    'variable "environment"  { type = string\n  default = "staging" }\n'
-    'variable "project_id"   { type = string\n  default = "" }\n'
-    'variable "region"       { type = string\n  default = "us-central1" }\n'
-    'variable "min_replicas" { type = number\n  default = 1 }\n'
-    'variable "max_replicas" { type = number\n  default = 3 }\n'
-    'variable "docker_image" { type = string\n  default = "" }\n'
-)
+_GCP_VARIABLES = """\
+variable "app_name" {
+  type = string
+}
+variable "environment" {
+  type    = string
+  default = "staging"
+}
+variable "project_id" {
+  type    = string
+  default = ""
+}
+variable "region" {
+  type    = string
+  default = "us-central1"
+}
+variable "min_replicas" {
+  type    = number
+  default = 1
+}
+variable "max_replicas" {
+  type    = number
+  default = 3
+}
+variable "docker_image" {
+  type    = string
+  default = ""
+}
+"""
 
-_AZURE_VARIABLES = (
-    'variable "app_name"        { type = string }\n'
-    'variable "environment"     { type = string\n  default = "staging" }\n'
-    'variable "subscription_id" { type = string\n  default = "" }\n'
-    'variable "resource_group"  { type = string\n  default = "devtodeploy-rg" }\n'
-    'variable "location"        { type = string\n  default = "eastus" }\n'
-    'variable "min_replicas"    { type = number\n  default = 1 }\n'
-    'variable "max_replicas"    { type = number\n  default = 3 }\n'
-    'variable "docker_image"    { type = string\n  default = "" }\n'
-)
+_AZURE_VARIABLES = """\
+variable "app_name" {
+  type = string
+}
+variable "environment" {
+  type    = string
+  default = "staging"
+}
+variable "subscription_id" {
+  type    = string
+  default = ""
+}
+variable "resource_group" {
+  type    = string
+  default = "devtodeploy-rg"
+}
+variable "location" {
+  type    = string
+  default = "eastus"
+}
+variable "min_replicas" {
+  type    = number
+  default = 1
+}
+variable "max_replicas" {
+  type    = number
+  default = 3
+}
+variable "docker_image" {
+  type    = string
+  default = ""
+}
+"""
 
 _MAIN_TF_MAP: dict[tuple[CloudProvider, DeploymentTarget], str] = {
     (CloudProvider.GCP, DeploymentTarget.CLOUD_RUN): _GCP_CLOUDRUN_MAIN,
