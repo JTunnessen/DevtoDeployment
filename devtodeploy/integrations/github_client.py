@@ -25,7 +25,13 @@ class GitHubClient:
         try:
             owner = self.gh.get_organization(self.org)
         except GithubException:
-            owner = self.gh.get_user(self.org)
+            # Fall back to explicit username lookup, then authenticated user
+            try:
+                owner = self.gh.get_user(self.org)
+                # Verify the user exists by accessing a property
+                _ = owner.login
+            except GithubException:
+                owner = self.gh.get_user()  # authenticated user
 
         try:
             repo = owner.create_repo(
