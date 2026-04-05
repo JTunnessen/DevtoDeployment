@@ -20,6 +20,7 @@ devtodeploy run "A task management web app with Kanban boards and team assignmen
 |---|-------|-------------|
 | 1 | **InputAgent** | Parses your description into a structured app specification |
 | 2 | **DevelopmentAgent** | Generates full-stack code (FastAPI backend + HTML/JS frontend), self-checks up to 10 iterations |
+| — | **Local Preview Loop** | Launches the app locally, opens your browser, and lets you request changes — repeat until satisfied |
 | 3 | **FunctionalTestAgent** | Writes and runs pytest tests |
 | 4 | **GitHubScanAgent** | Creates a GitHub repo, pushes code, runs Semgrep static analysis, auto-remediates HIGH findings |
 | 5 | **ReadmeAgent** | Generates a `README.md` for the app and pushes it to GitHub |
@@ -118,6 +119,45 @@ Resuming after a staging rejection re-provisions staging, re-runs the load test,
 
 ```bash
 devtodeploy status /tmp/devtodeploy/<pipeline-id>/state.json
+```
+
+---
+
+## Local Preview Loop
+
+After Stage 2 generates your application, `devtodeploy` automatically starts it locally (port 8765) and opens it in your browser. You can then request as many rounds of changes as you like before the pipeline continues:
+
+```
+╔══════════════════════════════════════════════════════╗
+║              INTERACTIVE PREVIEW                     ║
+║                                                      ║
+║  Your generated application will launch in your      ║
+║  browser. Review it, request changes if needed,      ║
+║  and type 'no' when you're happy to continue.        ║
+╚══════════════════════════════════════════════════════╝
+
+  App running at http://127.0.0.1:8765
+
+  Would you like to make any changes or enhancements? [y/n]: y
+
+  Change 1: Make the sidebar collapsible
+  Change 2: Add a dark mode toggle
+  Change 3: done
+
+  Applying your changes — please wait…
+  [app restarts, browser refreshes]
+
+  Would you like to make any changes or enhancements? [y/n]: n
+
+  Great! Continuing to the next pipeline stage…
+```
+
+Each round of changes is sent to Claude with the full current source as context. The pipeline proceeds to Stage 3 only when you type **no**.
+
+To skip the preview entirely (for automated/CI runs):
+
+```bash
+devtodeploy run "..." --no-preview --cloud azure
 ```
 
 ---

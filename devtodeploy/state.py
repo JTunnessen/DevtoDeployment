@@ -96,6 +96,13 @@ class DeploymentInfo(BaseModel):
     load_test: LoadTestResult | None = None
 
 
+class LocalPreviewIteration(BaseModel):
+    iteration: int
+    change_request: str
+    files_before: list[str] = Field(default_factory=list)  # file paths that existed
+    files_after: list[str] = Field(default_factory=list)   # file paths after change
+
+
 class NistControlAssessment(BaseModel):
     control_family: str
     control_id: str
@@ -132,6 +139,10 @@ class PipelineState(BaseModel):
     nist_assessments: list[NistControlAssessment] = Field(default_factory=list)
     staging_deployment: DeploymentInfo | None = None
     production_deployment: DeploymentInfo | None = None
+
+    # Local preview loop (between stages 2 and 3)
+    local_preview_iterations: list[LocalPreviewIteration] = Field(default_factory=list)
+    local_preview_completed: bool = False
 
     # Human approval gate
     human_approved: bool | None = None

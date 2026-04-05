@@ -47,3 +47,25 @@ def iteration_prompt(app_spec_json: str, issues: list[str], iteration: int) -> s
         f"Issues to fix:\n{issues_text}\n\n"
         "Return the complete corrected JSON file map now."
     )
+
+
+def change_request_prompt(
+    current_files_json: str,
+    app_spec_json: str,
+    change_requests: list[str],
+) -> str:
+    """Prompt to apply user-requested changes/enhancements during local preview."""
+    requests_text = "\n".join(f"{i + 1}. {r}" for i, r in enumerate(change_requests))
+    return (
+        "The application creator has reviewed the running application and requested "
+        "the following changes or enhancements. Apply ALL of them and return the "
+        "COMPLETE updated file map.\n\n"
+        f"Original application spec:\n{app_spec_json}\n\n"
+        f"Current source files:\n{current_files_json}\n\n"
+        f"Requested changes:\n{requests_text}\n\n"
+        "Rules:\n"
+        "- Return the FULL file map — include every file, even unchanged ones.\n"
+        "- Implement each change request completely; no placeholders or TODOs.\n"
+        "- Preserve the health-check endpoint GET /health.\n"
+        "Return ONLY the JSON object now."
+    )
