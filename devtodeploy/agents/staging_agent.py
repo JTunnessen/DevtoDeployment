@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from devtodeploy.agents.base import BaseAgent, PipelineHaltException
 from devtodeploy.config import CloudProvider
+from devtodeploy.integrations.docker_builder import DockerBuilder
 from devtodeploy.integrations.loadtest_runner import LoadTestRunner
 from devtodeploy.integrations.terraform_runner import TerraformRunner
 from devtodeploy.state import DeploymentInfo, PipelineState
@@ -17,6 +20,13 @@ class StagingAgent(BaseAgent):
         assert state.app_spec is not None
         assert state.development_result is not None
 
+        app_dir = str(Path(self.config.workspace_dir) / state.pipeline_id / "app")
+        app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
+
+        # Build and push Docker image
+        docker = DockerBuilder()
+        image_uri = self._build_image(docker, app_dir, app_name, "staging")
+
         tf_work_dir = prepare_terraform_workspace(
             self.config.workspace_dir,
             state.pipeline_id,
@@ -26,7 +36,7 @@ class StagingAgent(BaseAgent):
         )
         tf = TerraformRunner(tf_work_dir)
 
-        variables = self._build_tf_variables(state, "staging")
+        variables = self._build_tf_variables(state, "staging", image_uri)
 
         self.logger.info("terraform_init_staging")
         tf.init()
@@ -77,15 +87,33 @@ class StagingAgent(BaseAgent):
         )
         return state
 
-    def _build_tf_variables(self, state: PipelineState, env: str) -> dict[str, str]:
+    def _build_image(
+        self, docker: DockerBuilder, app_dir: str, app_name: str, tag: str
+    ) -> str:
+        try:
+            if self.config.cloud_provider == CloudProvider.GCP:
+                return docker.build_and_push_gcp(
+                    app_dir, self.config.gcp_project_id, app_name, tag
+                )
+            else:
+                registry = getattr(self.config, "azure_container_registry", "")
+                return docker.build_and_push_azure(app_dir, registry, app_name, tag)
+        except Exception as exc:
+            self.logger.warning("docker_build_skipped", reason=str(exc))
+            return ""
+
+    def _build_tf_variables(
+        self, state: PipelineState, env: str, image_uri: str = ""
+    ) -> dict[str, str]:
         assert state.app_spec is not None
-        # Cloud Run requires lowercase, hyphens only, max 49 chars
         app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
         service_name = f"{app_name}-{env}"[:49]
         base: dict[str, str] = {
             "app_name": service_name,
             "environment": env,
         }
+        if image_uri:
+            base["docker_image"] = image_uri
         if self.config.cloud_provider == CloudProvider.AZURE:
             base.update(
                 {

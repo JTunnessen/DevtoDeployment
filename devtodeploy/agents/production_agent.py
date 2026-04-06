@@ -6,6 +6,7 @@ import httpx
 
 from devtodeploy.agents.base import BaseAgent, PipelineHaltException
 from devtodeploy.config import CloudProvider
+from devtodeploy.integrations.docker_builder import DockerBuilder
 from devtodeploy.integrations.github_client import GitHubClient
 from devtodeploy.integrations.terraform_runner import TerraformRunner
 from devtodeploy.state import DeploymentInfo, PipelineState
@@ -39,6 +40,21 @@ class ProductionAgent(BaseAgent):
             state.mark_stage_failed(self.stage_number, msg)
             raise PipelineHaltException(msg)
 
+        app_dir = str(Path(self.config.workspace_dir) / state.pipeline_id / "app")
+        app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()  # type: ignore[union-attr]
+        docker = DockerBuilder()
+        image_uri = ""
+        try:
+            if self.config.cloud_provider == CloudProvider.GCP:
+                image_uri = docker.build_and_push_gcp(
+                    app_dir, self.config.gcp_project_id, app_name, "production"
+                )
+            else:
+                registry = getattr(self.config, "azure_container_registry", "")
+                image_uri = docker.build_and_push_azure(app_dir, registry, app_name, "production")
+        except Exception as exc:
+            self.logger.warning("docker_build_skipped", reason=str(exc))
+
         tf_work_dir = prepare_terraform_workspace(
             self.config.workspace_dir,
             state.pipeline_id,
@@ -47,7 +63,7 @@ class ProductionAgent(BaseAgent):
             self.config.deployment_target,
         )
         tf = TerraformRunner(tf_work_dir)
-        variables = self._build_tf_variables(state)
+        variables = self._build_tf_variables(state, image_uri)
 
         self.logger.info("terraform_init_production")
         tf.init()
@@ -119,7 +135,7 @@ class ProductionAgent(BaseAgent):
         except Exception as exc:
             self.logger.warning("release_creation_failed", error=str(exc))
 
-    def _build_tf_variables(self, state: PipelineState) -> dict[str, str]:
+    def _build_tf_variables(self, state: PipelineState, image_uri: str = "") -> dict[str, str]:
         assert state.app_spec is not None
         app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
         service_name = f"{app_name}-production"[:49]
@@ -129,6 +145,8 @@ class ProductionAgent(BaseAgent):
             "min_replicas": "2",
             "max_replicas": "10",
         }
+        if image_uri:
+            base["docker_image"] = image_uri
         if self.config.cloud_provider == CloudProvider.AZURE:
             base.update(
                 {
