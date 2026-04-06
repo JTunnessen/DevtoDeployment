@@ -137,5 +137,35 @@ def status(
     console.print()
 
 
+@app.command()
+def approve(
+    state_path: str = typer.Argument(..., help="Path to a saved state.json file"),
+) -> None:
+    """Approve the staging deployment to allow production deployment to proceed."""
+    from devtodeploy.state import PipelineState
+
+    state = PipelineState.load(state_path)
+
+    if not state.staging_deployment:
+        console.print("[red]No staging deployment found in state. Run the pipeline to Stage 8 first.[/]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold]Staging URL:[/] {state.staging_deployment.url}")
+    console.print(f"[bold]App:[/] {state.app_spec.app_name if state.app_spec else '—'}")
+    console.print(f"[bold]GitHub:[/] {state.github_repo_url}\n")
+
+    confirmed = typer.confirm("Approve this staging deployment for production?")
+    if confirmed:
+        state.human_approved = True
+        state.save(str(__import__('pathlib').Path(state_path).parent))
+        console.print("[green]✓ Approved. Resume the pipeline to deploy to production.[/]")
+        console.print(f"\n  devtodeploy resume {state_path}\n")
+    else:
+        state.human_approved = False
+        state.pipeline_halted_reason = "Human QA rejected staging deployment"
+        state.save(str(__import__('pathlib').Path(state_path).parent))
+        console.print("[yellow]✗ Rejected. Pipeline halted.[/]")
+
+
 if __name__ == "__main__":
     app()
