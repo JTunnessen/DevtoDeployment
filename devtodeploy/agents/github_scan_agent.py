@@ -5,6 +5,7 @@ from pathlib import Path
 
 from devtodeploy.agents.base import BaseAgent, PipelineHaltException
 from devtodeploy.integrations.bandit_runner import BanditRunner
+from devtodeploy.integrations.docker_builder import DockerBuilder
 from devtodeploy.integrations.github_client import GitHubClient
 from devtodeploy.state import PipelineState
 from devtodeploy.utils.workspace import write_app_files
@@ -109,13 +110,39 @@ class GitHubScanAgent(BaseAgent):
                 self.logger.warning("remediation_parse_failed", cycle=cycle)
                 break
 
+        # Build and push Docker image once here — Stages 8 and 9 reuse it
+        self._build_docker_image(state, app_dir)
+
         state.mark_stage_complete(self.stage_number)
         self.logger.info(
             "stage_complete",
             repo_url=state.github_repo_url,
+            docker_image=state.docker_image_uri,
             scan_passed=state.scan_result.passed if state.scan_result else False,
         )
         return state
+
+    def _build_docker_image(self, state: PipelineState, app_dir: Path) -> None:
+        """Build and push the app Docker image; store URI in state for reuse."""
+        assert state.app_spec is not None
+        from devtodeploy.config import CloudProvider
+        app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
+        try:
+            docker = DockerBuilder()
+            if self.config.cloud_provider == CloudProvider.GCP:
+                uri = docker.build_and_push_gcp(
+                    str(app_dir),
+                    self.config.gcp_project_id,
+                    app_name,
+                    tag="latest",
+                )
+            else:
+                registry = getattr(self.config, "azure_container_registry", "")
+                uri = docker.build_and_push_azure(str(app_dir), registry, app_name, tag="latest")
+            state.docker_image_uri = uri
+            self.logger.info("docker_image_built", uri=uri)
+        except Exception as exc:
+            self.logger.warning("docker_build_skipped", reason=str(exc))
 
     # ------------------------------------------------------------------
 

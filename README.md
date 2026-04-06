@@ -22,13 +22,13 @@ devtodeploy run "A task management web app with Kanban boards and team assignmen
 | 2 | **DevelopmentAgent** | Generates full-stack code (FastAPI backend + HTML/JS frontend), self-checks up to 10 iterations |
 | — | **Local Preview Loop** | Launches the app locally, opens your browser, and lets you request changes — repeat until satisfied |
 | 3 | **FunctionalTestAgent** | Writes and runs pytest tests |
-| 4 | **GitHubScanAgent** | Creates a GitHub repo, pushes code, runs Bandit + Safety static analysis, auto-remediates HIGH findings |
+| 4 | **GitHubScanAgent** | Creates a GitHub repo, pushes code, runs Bandit + Safety static analysis, auto-remediates HIGH findings, **builds and pushes the Docker image** (built once here, reused by Stages 8 and 9) |
 | 5 | **ReadmeAgent** | Generates a `README.md` for the app and pushes it to GitHub |
 | 6 | **JenkinsAgent** | Triggers a Jenkins functional test job and waits for results |
 | 7 | **CybersecAgent** | Generates `SECURITY.md` (OWASP Top 10) and `NIST_800_53.md` (SP 800-53 Rev5 control assessment) |
-| 8 | **StagingAgent** | Provisions a staging environment via Terraform, deploys the app, runs a k6 load test up to 10,000 concurrent users |
-| — | **Human QA Gate** | Pauses here — presents the staging URL and metrics for your review |
-| 9 | **ProductionAgent** | Provisions production infrastructure, deploys, smoke tests, and creates a GitHub Release |
+| 8 | **StagingAgent** | Provisions a staging environment via Terraform, deploys the pre-built Docker image, runs a k6 load test |
+| — | **Human QA Gate** | Pauses here — review the staging URL, then run `devtodeploy approve <state.json>` to continue |
+| 9 | **ProductionAgent** | Provisions production infrastructure, deploys the same Docker image, smoke tests, creates a GitHub Release |
 
 The pipeline checkpoints state to disk after every stage. If anything fails or you reject staging, you can resume exactly where you left off.
 
@@ -42,13 +42,25 @@ The pipeline checkpoints state to disk after every stage. If anything fails or y
 - An [Anthropic API key](https://console.anthropic.com/)
 - A GitHub personal access token (with `repo` scope)
 
-**Required for cloud deployment (Stages 8–9)**
+**Required for cloud deployment (Stages 4, 8–9)**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (must be running when the pipeline executes)
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.7
 - Azure CLI (`az`) **or** GCP CLI (`gcloud`) depending on your target cloud
 - See [docs/cloud_credentials.md](docs/cloud_credentials.md) for credential setup
 
+**GCP additional setup**
+```bash
+# Enable required APIs
+gcloud services enable run.googleapis.com containerregistry.googleapis.com \
+  artifactregistry.googleapis.com cloudresourcemanager.googleapis.com \
+  iam.googleapis.com --project=<your-project-id>
+
+# Authenticate Docker to push to GCR
+gcloud auth configure-docker gcr.io
+```
+
 **Required for load testing (Stage 8)**
-- [k6](https://k6.io/docs/get-started/installation/)
+- [k6](https://k6.io/docs/get-started/installation/) — if not installed, the load test is skipped and the pipeline continues
 
 **Optional**
 - A Jenkins server for automated functional testing (Stage 6). If not configured, Stage 6 is skipped automatically. See [docs/jenkins_setup.md](docs/jenkins_setup.md).
@@ -105,15 +117,27 @@ devtodeploy run "A personal finance tracker with income/expense logging, categor
 devtodeploy run "A simple to-do API" --stages 1,2,3 --cloud azure
 ```
 
-### Resume after a rejection or failure
+### Approve staging for production
 
-When you reject staging or a stage fails, the pipeline saves its full state to disk:
+After Stage 8 deploys to staging, the pipeline pauses. Review the app at the staging URL, then run:
+
+```bash
+devtodeploy approve /tmp/devtodeploy/<pipeline-id>/state.json
+```
+
+This shows the staging URL and app name, prompts for confirmation, and records approval in the state file. Then resume to deploy to production:
 
 ```bash
 devtodeploy resume /tmp/devtodeploy/<pipeline-id>/state.json
 ```
 
-Resuming after a staging rejection re-provisions staging, re-runs the load test, and re-prompts the QA gate.
+### Resume after a rejection or failure
+
+When a stage fails, the pipeline saves its full state to disk:
+
+```bash
+devtodeploy resume /tmp/devtodeploy/<pipeline-id>/state.json
+```
 
 ### Check pipeline status
 
@@ -164,26 +188,25 @@ devtodeploy run "..." --no-preview --cloud azure
 
 ## Human QA Approval Gate
 
-After staging is deployed and load-tested, the pipeline pauses and displays a summary:
+After Stage 8 deploys to staging and runs the load test, the pipeline pauses. Visit the staging URL, then run the approve command:
 
-```
-╔══════════════════════════════════════════════════════════════╗
-║          STAGING QA APPROVAL REQUIRED                        ║
-╠══════════════════════════════════════════════════════════════╣
-║ App:          RecipeShare                                     ║
-║ Staging URL:  https://recipeshare-staging.azurewebsites.net   ║
-║ Load Test:    ✓ PASSED  (p95=312ms, error rate=0.2%)          ║
-║ Static Scan:  ✓ PASSED  (0 HIGH, 1 MEDIUM, 4 LOW)             ║
-║ Jenkins:      ✓ SUCCESS (34/34 tests passed)                  ║
-╠══════════════════════════════════════════════════════════════╣
-║  Please test the application at the URL above.               ║
-║  Type 'approve' to deploy to production.                     ║
-║  Type 'reject'  to shut down staging and stop the pipeline.  ║
-╚══════════════════════════════════════════════════════════════╝
+```bash
+devtodeploy approve /tmp/devtodeploy/<pipeline-id>/state.json
 ```
 
-- **`approve`** → deploys to production
-- **`reject`** → tears down the staging environment (to avoid cloud costs) and saves a resumable checkpoint
+```
+Staging URL: https://personal-finance-tracker-staging-abc123-uc.a.run.app
+App: FinanceTracker
+GitHub: https://github.com/your-org/personal-finance-tracker
+
+Approve this staging deployment for production? [y/N]: y
+✓ Approved. Resume the pipeline to deploy to production.
+
+  devtodeploy resume /tmp/devtodeploy/<pipeline-id>/state.json
+```
+
+- **`y`** → records approval, resume deploys to production using the same Docker image
+- **`N`** → records rejection, pipeline halts with a resumable checkpoint
 
 ---
 
@@ -213,16 +236,18 @@ Staging uses cost-optimised SKUs (Azure B1 / Cloud Run min-instances=0). Product
 
 ## Load Testing
 
-The k6 load test script (`loadtests/k6_script.js`) ramps up to `MAX_LOAD_TEST_USERS` (default: 10,000) virtual users using this profile:
+The k6 load test script (`loadtests/k6_script.js`) ramps up to `MAX_LOAD_TEST_USERS` (configurable in `.env`, default: 100) virtual users:
 
 ```
-0 → 100 VUs over 30s   (warm-up)
-100 → 10,000 VUs over 60s  (ramp to peak)
-Hold at 10,000 VUs for 60s
-Ramp down to 0 over 30s
+0 → min(MAX_VUS, 10) over 20s   (warm-up)
+→ MAX_VUS over 40s               (ramp to peak)
+Hold at MAX_VUS for 30s
+Ramp down to 0 over 10s
 ```
 
 Pass criteria: p95 response time < 2,000ms and error rate < 5%.
+
+If k6 is not installed the load test is skipped automatically and the pipeline continues to the QA gate.
 
 ---
 
@@ -232,7 +257,7 @@ Pass criteria: p95 response time < 2,000ms and error rate < 5%.
 DevtoDeployment/
 ├── devtodeploy/
 │   ├── agents/          # One module per pipeline stage
-│   ├── integrations/    # GitHub, Jenkins, Bandit + Safety, Terraform, k6 wrappers
+│   ├── integrations/    # GitHub, Jenkins, Bandit + Safety, Terraform, Docker, k6 wrappers
 │   ├── prompts/         # Claude prompt templates
 │   ├── utils/           # Logging, retry, workspace helpers
 │   ├── cli.py           # Typer CLI entry point

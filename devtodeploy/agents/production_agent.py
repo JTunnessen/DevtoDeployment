@@ -40,20 +40,22 @@ class ProductionAgent(BaseAgent):
             state.mark_stage_failed(self.stage_number, msg)
             raise PipelineHaltException(msg)
 
-        app_dir = str(Path(self.config.workspace_dir) / state.pipeline_id / "app")
-        app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()  # type: ignore[union-attr]
-        docker = DockerBuilder()
-        image_uri = ""
-        try:
-            if self.config.cloud_provider == CloudProvider.GCP:
-                image_uri = docker.build_and_push_gcp(
-                    app_dir, self.config.gcp_project_id, app_name, "production"
-                )
-            else:
-                registry = getattr(self.config, "azure_container_registry", "")
-                image_uri = docker.build_and_push_azure(app_dir, registry, app_name, "production")
-        except Exception as exc:
-            self.logger.warning("docker_build_skipped", reason=str(exc))
+        # Reuse the image built in Stage 4; only rebuild if missing
+        image_uri = state.docker_image_uri
+        if not image_uri:
+            app_dir = str(Path(self.config.workspace_dir) / state.pipeline_id / "app")
+            app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()  # type: ignore[union-attr]
+            docker = DockerBuilder()
+            try:
+                if self.config.cloud_provider == CloudProvider.GCP:
+                    image_uri = docker.build_and_push_gcp(
+                        app_dir, self.config.gcp_project_id, app_name, "latest"
+                    )
+                else:
+                    registry = getattr(self.config, "azure_container_registry", "")
+                    image_uri = docker.build_and_push_azure(app_dir, registry, app_name, "latest")
+            except Exception as exc:
+                self.logger.warning("docker_build_skipped", reason=str(exc))
 
         tf_work_dir = prepare_terraform_workspace(
             self.config.workspace_dir,

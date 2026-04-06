@@ -131,6 +131,7 @@ class PipelineState(BaseModel):
     test_files: dict[str, str] = Field(default_factory=dict)
     github_repo_url: str = ""
     github_repo_name: str = ""
+    docker_image_uri: str = ""   # set in Stage 4, reused by Stages 8 and 9
     scan_result: ScanResult | None = None
     readme_content: str = ""
     jenkins_result: JenkinsResult | None = None

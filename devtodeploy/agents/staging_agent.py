@@ -23,9 +23,9 @@ class StagingAgent(BaseAgent):
         app_dir = str(Path(self.config.workspace_dir) / state.pipeline_id / "app")
         app_name = state.app_spec.suggested_repo_name.replace("_", "-").lower()
 
-        # Build and push Docker image
+        # Reuse image built in Stage 4; only build here if Stage 4 was skipped/failed
         docker = DockerBuilder()
-        image_uri = self._build_image(docker, app_dir, app_name, "staging")
+        image_uri = state.docker_image_uri or self._build_image(docker, app_dir, app_name, "staging")
 
         tf_work_dir = prepare_terraform_workspace(
             self.config.workspace_dir,
