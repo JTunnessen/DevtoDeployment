@@ -1,12 +1,16 @@
 """Docker image build and push utilities."""
 from __future__ import annotations
 
+import platform
 import subprocess
 from pathlib import Path
 
 from devtodeploy.utils.logging import get_logger
 
 logger = get_logger("docker_builder")
+
+# On Windows, gcloud/docker are .cmd wrappers that need shell=True
+_SHELL = platform.system() == "Windows"
 
 
 class DockerBuilder:
@@ -87,9 +91,16 @@ class DockerBuilder:
         return image_uri
 
     def _run(self, cmd: list[str], event: str, **log_kwargs) -> None:
-        logger.info(event, cmd=" ".join(cmd), **log_kwargs)
-        result = subprocess.run(cmd, capture_output=False, text=True)
+        # On Windows gcloud/docker are .cmd files; shell=True lets the OS resolve them
+        cmd_str = " ".join(cmd)
+        logger.info(event, cmd=cmd_str, **log_kwargs)
+        result = subprocess.run(
+            cmd_str if _SHELL else cmd,
+            capture_output=False,
+            text=True,
+            shell=_SHELL,
+        )
         if result.returncode != 0:
             raise RuntimeError(
-                f"{cmd[0]} command failed (exit {result.returncode}): {' '.join(cmd)}"
+                f"command failed (exit {result.returncode}): {cmd_str}"
             )
