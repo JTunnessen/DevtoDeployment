@@ -233,33 +233,62 @@ class LocalPreviewGate:
     # ------------------------------------------------------------------
 
     def _ensure_server_deps(self, state: PipelineState, app_dir: Path) -> None:
-        """Make sure uvicorn/flask is installed so the preview server can start."""
-        framework = state.app_spec.backend_framework if state.app_spec else "fastapi"  # type: ignore[union-attr]
-
-        # Install the app's own requirements first
+        """Install Python deps and build the React frontend before starting the server."""
+        # 1. Python backend dependencies
         for req_candidate in [
             app_dir / "backend" / "requirements.txt",
             app_dir / "requirements.txt",
         ]:
             if req_candidate.exists():
-                console.print("  [dim]Installing app dependencies…[/]")
+                console.print("  [dim]Installing Python dependencies…[/]")
                 subprocess.run(
                     [sys.executable, "-m", "pip", "install", "-r", str(req_candidate), "-q"],
                     capture_output=True,
                 )
                 break
 
-        # Ensure the server runner itself is available
-        if framework == "flask":
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "flask", "-q"],
-                capture_output=True,
+        # Ensure uvicorn/fastapi are available
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "uvicorn[standard]", "fastapi", "-q"],
+            capture_output=True,
+        )
+
+        # 2. React/Vite frontend build
+        frontend_dir = app_dir / "frontend"
+        if (frontend_dir / "package.json").exists():
+            self._build_react_frontend(frontend_dir)
+
+    def _build_react_frontend(self, frontend_dir: Path) -> None:
+        """Run npm install + npm run build for the React frontend."""
+        console.print("  [dim]Installing frontend dependencies (npm install)…[/]")
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=str(frontend_dir),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(
+                "  [yellow]npm install failed — Node.js may not be installed. "
+                "Skipping React build; preview may not render correctly.[/]"
             )
+            if result.stderr:
+                console.print(f"  [red dim]{result.stderr[-300:]}[/]")
+            return
+
+        console.print("  [dim]Building React frontend (npm run build)…[/]")
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(frontend_dir),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print("  [yellow]React build failed — preview may show a blank page.[/]")
+            if result.stderr:
+                console.print(f"  [red dim]{result.stderr[-500:]}[/]")
         else:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "uvicorn[standard]", "fastapi", "-q"],
-                capture_output=True,
-            )
+            console.print("  [green]React build complete.[/]")
 
     # ------------------------------------------------------------------
     # Local server lifecycle
@@ -299,17 +328,9 @@ class LocalPreviewGate:
     def _build_server_command(
         self, framework: str, entrypoint: str, app_dir: Path
     ) -> list[str]:
-        """Return the shell command list to start the dev server."""
+        """Return the shell command list to start the FastAPI server."""
         # Convert "backend/main.py" → "backend.main"
         module = entrypoint.replace("\\", "/").replace("/", ".").removesuffix(".py")
-
-        if framework == "flask":
-            return [
-                sys.executable, "-m", "flask", "run",
-                "--host", "127.0.0.1",
-                "--port", str(_PREVIEW_PORT),
-                "--no-debugger",
-            ]
         return [
             sys.executable, "-m", "uvicorn",
             f"{module}:app",

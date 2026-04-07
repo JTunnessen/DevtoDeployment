@@ -19,7 +19,7 @@ devtodeploy run "A task management web app with Kanban boards and team assignmen
 | # | Agent | What happens |
 |---|-------|-------------|
 | 1 | **InputAgent** | Parses your description into a structured app specification |
-| 2 | **DevelopmentAgent** | Generates full-stack code (FastAPI backend + HTML/JS frontend), self-checks up to 10 iterations |
+| 2 | **DevelopmentAgent** | Generates full-stack code (FastAPI backend + React/Vite frontend), self-checks up to 10 iterations |
 | — | **Local Preview Loop** | Launches the app locally, opens your browser, and lets you request changes — repeat until satisfied |
 | 3 | **FunctionalTestAgent** | Writes and runs pytest tests |
 | 4 | **GitHubScanAgent** | Creates a GitHub repo, pushes code, runs Bandit + Safety static analysis, auto-remediates HIGH findings, **builds and pushes the Docker image** (built once here, reused by Stages 8 and 9) |
@@ -38,6 +38,7 @@ The pipeline checkpoints state to disk after every stage. If anything fails or y
 
 **Required**
 - Python 3.11+
+- [Node.js 18+](https://nodejs.org/) and `npm` — for building the React frontend during local preview and Docker image build
 - `git`
 - An [Anthropic API key](https://console.anthropic.com/)
 - A GitHub personal access token (with `repo` scope)
@@ -149,7 +150,9 @@ devtodeploy status /tmp/devtodeploy/<pipeline-id>/state.json
 
 ## Local Preview Loop
 
-After Stage 2 generates your application, `devtodeploy` automatically starts it locally (port 8765) and opens it in your browser. You can then request as many rounds of changes as you like before the pipeline continues:
+After Stage 2 generates your application, `devtodeploy` automatically builds the React frontend (`npm install && npm run build`), starts the FastAPI server locally (port 8765), and opens it in your browser. You can then request as many rounds of changes as you like before the pipeline continues:
+
+> **Node.js required** — `npm` must be on your PATH for the React build to succeed. If Node is not installed the preview will still launch but may show a blank page.
 
 ```
 ╔══════════════════════════════════════════════════════╗
@@ -229,6 +232,8 @@ Terraform modules are included for four deployment targets, selectable via `DEPL
 | Azure | AKS | `aks` |
 | GCP | Cloud Run | `cloud_run` |
 | GCP | GKE | `gke` |
+
+The Docker image uses a **multi-stage build**: Node.js builds the React/Vite frontend in stage 1; Python copies the compiled `dist/` and runs FastAPI in stage 2. This keeps the final image lean (no Node.js runtime in production).
 
 Staging uses cost-optimised SKUs (Azure B1 / Cloud Run min-instances=0). Production uses auto-scaling SKUs (Azure P2v3 / Cloud Run with min 2 instances).
 
