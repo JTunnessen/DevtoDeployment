@@ -127,12 +127,20 @@ class BanditRunner:
     # ── Safety ────────────────────────────────────────────────────────────────
 
     def _run_safety(self, requirements_file: str) -> list[ScanFinding]:
-        result = subprocess.run(
+        # `safety check` is deprecated since Safety 3.x; prefer `safety scan`
+        # Try the modern command first, fall back to the legacy one
+        for cmd in (
+            ["safety", "scan", "-r", requirements_file, "--output", "json", "--exit-code", "0"],
             ["safety", "check", "-r", requirements_file, "--json"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        ):
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if "DEPRECATED" not in result.stdout and "DEPRECATED" not in result.stderr:
+                break
 
         findings: list[ScanFinding] = []
         try:
