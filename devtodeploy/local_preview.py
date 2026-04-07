@@ -260,12 +260,27 @@ class LocalPreviewGate:
 
     def _build_react_frontend(self, frontend_dir: Path) -> None:
         """Run npm install + npm run build for the React frontend."""
+        import shutil as _shutil
+        import platform as _platform
+
+        # On Windows, npm is npm.cmd — use shell=True so the OS resolves it
+        use_shell = _platform.system() == "Windows"
+
+        # Verify npm is available at all
+        if not use_shell and not _shutil.which("npm"):
+            console.print(
+                "  [yellow]npm not found on PATH — skipping React build. "
+                "Install Node.js 18+ to enable the local preview.[/]"
+            )
+            return
+
         console.print("  [dim]Installing frontend dependencies (npm install)…[/]")
         result = subprocess.run(
-            ["npm", "install"],
+            "npm install" if use_shell else ["npm", "install"],
             cwd=str(frontend_dir),
             capture_output=True,
             text=True,
+            shell=use_shell,
         )
         if result.returncode != 0:
             console.print(
@@ -278,10 +293,11 @@ class LocalPreviewGate:
 
         console.print("  [dim]Building React frontend (npm run build)…[/]")
         result = subprocess.run(
-            ["npm", "run", "build"],
+            "npm run build" if use_shell else ["npm", "run", "build"],
             cwd=str(frontend_dir),
             capture_output=True,
             text=True,
+            shell=use_shell,
         )
         if result.returncode != 0:
             console.print("  [yellow]React build failed — preview may show a blank page.[/]")
